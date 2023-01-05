@@ -1,14 +1,10 @@
 import { pipe } from "@fp-ts/data/Function"
-import * as Context from "@fp-ts/data/Context";
 import * as Z from "@effect/io/Effect"
-import * as Scope from "@effect/io/Scope";
 import * as Schedule from "@effect/io/Schedule"
 
 import * as readline from 'node:readline/promises'
-import { stdin as input, stdout as output } from 'node:process'
-import { promisify } from "node:util";
 import { Name } from "./models/Name";
-import { ReadlineInterface, resource } from "./effects/Readline";
+import { Readline } from "./effects/Readline";
 
 export const askQuestion = (rl: readline.Interface, message: string) =>
   Z.tryCatchPromise(
@@ -19,21 +15,23 @@ export const askQuestion = (rl: readline.Interface, message: string) =>
 export const printAnswer = (answer: string) =>
   Z.sync(() => console.log(`Thank you for your valuable feedback: ${answer}`))
 
-const getName =
+const getName: Z.Effect<Readline, unknown, Name> =
   pipe(
-    Z.service(ReadlineInterface),
-    Z.flatMap((_) => askQuestion(_.rl, "What's your name? ")),
+    Z.service(Readline),
+    Z.flatMap((rl) => rl.getUserInput("What's your name? ")),
     Z.flatMap((input) => 
       pipe(
         Z.fromOption(Name.make(input)),
-        Z.tapError((_) => Z.succeed(console.log("Invalid input. Please try again...")))
+        Z.tapError((_) => Z.succeed(console.log("Invalid name. Please try again...")))
       )
-    )
+    ),
+    Z.retry(Schedule.recurs(2))
   )
   
 export const readlineProgram = () =>
   pipe(
     getName,
-    Z.retry(Schedule.once()),
+    Z.flatMap((name) => Z.sync(() => console.log(name.name))),
+    Z.catchAll((_) => Z.succeed(console.log("Sorry. Ran out of tries to enter name.")))
   )
   
